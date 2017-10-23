@@ -7,6 +7,8 @@ Created on Thu Oct 19 13:06:47 2017
 @author: ben
 """
 import numpy as np
+import scipy.sparse as sparse
+import scipy.linalg as linalg
 
 
 class poly_ref_surf:
@@ -16,19 +18,20 @@ class poly_ref_surf:
         self.x0=x0
         self.y0=y0
         poly_exp_x, poly_exp_y=np.meshgrid(np.arange(0, self.degree_x+1), np.arange(0, self.degree_y+1))
-        temp=np.array(list(set(zip(poly_exp_x.ravel(), poly_exp_y.ravel()))))
+        temp=np.asarray(list(set(zip(poly_exp_x.ravel(), poly_exp_y.ravel()))))
         # sort the coefficients by x degree, then by y degree
-        temp=temp[np.where(np.sum(temp, axis=1)<=np.maximum(self.degree_x, self.degree_y)),:];  
+        temp=temp[np.sum(temp, axis=1)<=np.maximum(self.degree_x, self.degree_y),:];  
         # if the skip_constant option is chosen, eliminate the constant term        
         if skip_constant:
-            temp=temp(np.all(temp>0, axis=1))
+            temp=temp[np.all(temp>0, axis=1)]
         # sort the exponents first by x, then by y    
-        temp=temp[(temp[:,0]+temp[:,1]/(temp.shape[0]+1)).argsort()]
+        temp=temp[(temp[:,0]+temp[:,1]/(temp.shape[0]+1.)).argsort()]
         self.exp_x=temp[:,0]
         self.exp_y=temp[:,1]
-        self.poly_vals=np.NaN(self.exp_x.shape)
+        self.poly_vals=np.NaN+np.zeros(self.exp_x.shape)
         self.model_cov_matrix=None
         self.xy_scale=xy_scale
+        self.skip_constant=skip_constant
     def fit_matrix(self, x, y):
         G=np.zeros([x.size, self.exp_x.size])
         for col, ee in enumerate(zip(self.exp_x, self.exp_y)):
@@ -51,11 +54,13 @@ class poly_ref_surf:
         X2r=len(zd)*2
         mask=np.ones_like(zd.ravel(), dtype=bool)
         for k_it in np.arange(max_iterations):
-            rows=np.where(mask)
+            rows=mask
             sigma_inv=sparse.diags(1/sigma_d[rows])
             Gsub=G[rows,:]
-            cols=np.c_[0,np.where([np.max(Gsub,0)-np.min(Gsub,0)]>0)]
-            m=np.zeros(1, Gsub.shape[1])
+            cols=(np.amax(Gsub,axis=0)-np.amin(Gsub,axis=0))>0
+            if self.skip_constant is False:
+                cols[0]=True
+            m=np.zeros([1, Gsub.shape[1]])
             # compute the LS coefficients
             msub, rr, rank, sing=linalg.lstsq(sigma_inv.dot(Gsub[:,cols]), sigma_inv.dot(zd[rows]))
             m[cols]=msub
