@@ -99,18 +99,7 @@ def RDE(x):
     LH=np.interp(np.array([0.16, 0.84])*len(xs), ind, xs.sorted())
     return (LH[1]-LH[0])/2.
 
-
-class ATL06_data:
-    def __init__(self, filename=None, x_bounds=None, y_bounds=None, list_of_fields=None ):
-        if self.filename is not None:
-            self.read_from_file(filename, x_bounds, y_bounds, list_of_fields)
-    def read_from_file(self, filename, x_bounds=None, y_bounds=None, list_of_fields=None):
-        if list_of_fields is None:
-            # read everything
-            list_of_fields={'x_RGT','y_RGT','h_LI','h_LI_sigma','lat_ctr','lon_ctr','time','h_robust_spread','signal_selection_source','SNR_significance'}
-        h5_f=h5py.File(filename,'r')
-        for field in list_of_fields:
-            self.setattr(field, h5_f[field])
+   
             
 
 def flatten_struct(a):
