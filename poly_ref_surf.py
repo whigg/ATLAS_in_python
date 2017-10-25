@@ -8,7 +8,9 @@ Created on Thu Oct 19 13:06:47 2017
 """
 import numpy as np
 import scipy.sparse as sparse
+#import scipy.stats as stats
 import scipy.linalg as linalg
+from RDE import RDE
 
 
 class poly_ref_surf:
@@ -47,7 +49,6 @@ class poly_ref_surf:
         # asign poly_vals and cov_matrix with a linear fit to zd at points xd, yd
         # build the design matrix:      
         G=self.fit_matrix(xd, yd)
-        N_data=xd.ravel().shape[0]
         # build a sparse covariance matrix
         if sigma_d is None:
             sigma_d=np.ones_like(xd.ravel())
@@ -55,24 +56,27 @@ class poly_ref_surf:
         mask=np.ones_like(zd.ravel(), dtype=bool)
         for k_it in np.arange(max_iterations):
             rows=mask
-            sigma_inv=sparse.diags(1/sigma_d[rows])
+            sigma_inv=sparse.diags(1/sigma_d.ravel()[rows])
             Gsub=G[rows,:]
             cols=(np.amax(Gsub,axis=0)-np.amin(Gsub,axis=0))>0
             if self.skip_constant is False:
                 cols[0]=True
-            m=np.zeros([1, Gsub.shape[1]])
+            m=np.zeros([Gsub.shape[1],1])
             # compute the LS coefficients
-            msub, rr, rank, sing=linalg.lstsq(sigma_inv.dot(Gsub[:,cols]), sigma_inv.dot(zd[rows]))
-            m[cols]=msub
-            r=zd.ravel()-m.dot(G)
-            rs=sigma_inv.dot(r[rows])
+            msub, rr, rank, sing=linalg.lstsq(sigma_inv.dot(Gsub[:,cols]), sigma_inv.dot(zd.ravel()[rows]))
+            msub.shape=(len(msub), 1)
+            m[np.where(cols)]=msub
+            residual=zd.ravel()-G.dot(m).ravel()
+            rs=residual/sigma_d.ravel()
             X2r_last=X2r
-            X2r=sum(rs**2)/(len(rows)-len(cols))       
+            X2r=sum(rs**2)/(len(rows)-len(cols))  
+            print "iteration=%d X2r=%3.2f" %(k_it,X2r)
             if np.abs(X2r_last-X2r)<0.01 or X2r<1:
                 break
-            sigma=RDE(rs)
+            sigma=RDE(rs[rows])
             threshold=3.*np.max(sigma, min_sigma)
-            mask=np.abs(r)<threshold
+            mask=np.abs(rs)<threshold
+            print "\tsigma=%3.2f, f=%d/%d" % (sigma, np.sum(mask), len(mask))
             # In the future, compute the LS coefficients using PySPQR (get from github.com/yig/PySPQR)
         
-        return m, r, X2r
+        return m, residual, X2r, rows
