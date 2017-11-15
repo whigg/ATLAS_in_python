@@ -8,13 +8,22 @@ Class to read and manipulate ATL06 data.  Currently set up for Ben-style fake da
 """
 import h5py
 import numpy as np
+from ATL06_pair import ATL06_pair
 
 class ATL06_data:
     np.seterr(invalid='ignore')
-    def __init__(self, filename=None, x_bounds=None, y_bounds=None, list_of_fields=None, list_of_data=None, from_dict=None):
-        if list_of_fields is None:
+    def __init__(self, filename=None, pair=1, x_bounds=None, y_bounds=None, field_dict=None, list_of_fields=None, list_of_data=None, from_dict=None):
+        if field_dict is None:
             # read everything
-            list_of_fields=['x_RGT','y_RGT','h_LI','h_LI_sigma','lat_ctr','lon_ctr','time','h_robust_spread','signal_selection_source','SNR_significance']
+            field_dict={'land_ice_height':['delta_time','dh_fit_dx', 'dh_fit_dy','h_li','h_li_sigma', 'latitude','longitude',   'atl06_quality_summary', 'segment_id'], 
+                        'ground_track':['cycle','x_atc', 'y_atc','seg_azimuth'],
+                        'fit_statistics':['dh_fit_dx_sigma', 'h_robust_spread', 'snr_significance','signal_selection_source']} 
+        if list_of_fields is None:
+            list_of_fields=list()
+            for group in field_dict.keys():
+                for field in field_dict[group]:
+                    list_of_fields.append(field)
+            
         self.list_of_fields=list_of_fields
         if list_of_data is not None:
             self.build_from_list_of_data(list_of_data)
@@ -22,17 +31,17 @@ class ATL06_data:
         if from_dict is not None:
             self.list_of_fields=list_of_fields
             for field in list_of_fields:
-                self=setattr(self, from_dict[field])
+                setattr(self, field, from_dict[field])
             return
         # read from a file if specified
         if filename is not None:
             # read a list of files if list provided
             if isinstance(filename, (list, tuple)):
-                D6_list=[ATL06_data(filename=thisfile, x_bounds=x_bounds, y_bounds=y_bounds, list_of_fields=list_of_fields) for thisfile in filename]
+                D6_list=[ATL06_data(filename=thisfile, field_dict=field_dict, pair=pair, x_bounds=x_bounds, y_bounds=y_bounds) for thisfile in filename]
                 self.build_from_list_of_data(D6_list)
             elif isinstance(filename, (basestring)):
                 # this happens when the input filename is a string, not a list
-                self.read_from_file(filename, x_bounds=x_bounds, y_bounds=y_bounds)
+                self.read_from_file(filename, field_dict, pair=pair, x_bounds=x_bounds, y_bounds=y_bounds)
             else:
                 raise TypeError
         else:
@@ -40,27 +49,23 @@ class ATL06_data:
             for field in list_of_fields:
                 setattr(self, field, np.zeros((2,0)))       
           
-    def read_from_file(self, filename, x_bounds=None, y_bounds=None, list_of_fields=None):
-        if list_of_fields is None:
-            # read everything
-            list_of_fields=self.list_of_fields
+    def read_from_file(self, filename, field_dict,  x_bounds=None, y_bounds=None, pair=None):
+        beam_names=['gt%d%s' %(pair, b) for b in ['l','r']]
         h5_f=h5py.File(filename,'r')
- 
-        for field in list_of_fields:
-            #print field
-            try:
-                setattr(self, field, np.array(h5_f[field]).transpose())
-            except KeyError:
-                setattr(self, field, np.zeros_like(self.time)+np.NaN)
-        # build the ATL06 quality flag
-        quality=np.array(h5_f['signal_selection_source']).transpose()>1.
-        quality=np.logical_or(quality, np.array(h5_f['h_robust_spread']).transpose()>1.)
-        quality=np.logical_or(quality, np.array(h5_f['h_LI_sigma']).transpose()>1.)
-        quality=np.logical_or(quality, np.array(h5_f['SNR_significance']).transpose()>0.02)        
-        self.atl06_quality_summary=quality
-        if 'atl06_quality_summary' not in self.list_of_fields:
-            self.list_of_fields.append('atl06_quality_summary')
-        # read the rest of the fields.
+        if beam_names[0] not in h5_f.keys():
+            return None
+        for group in field_dict.keys():
+            for field in field_dict[group]:
+                if field not in self.list_of_fields:
+                    self.list_of_fields.append(field)
+                #print field
+                try:
+                    setattr(self, field, np.c_[
+                        np.array(h5_f[beam_names[0]][group][field]).transpose(), 
+                        np.array(h5_f[beam_names[1]][group][field]).transpose()])
+                except KeyError:
+                    print "could not read %s/%s" % (group, field)
+                    setattr(self, field, np.zeros_like(self.delta_time)+np.NaN)
         return
 
     def append(self, D):
@@ -83,53 +88,38 @@ class ATL06_data:
             setattr(self, field, getattr(self, field)[index,:])
         return
         
-    def subset(self, index):
+    def subset(self, index, by_row=True):
         dd=dict()
         for field in self.list_of_fields:
-            dd[field]=getattr(self, field)[index,:]
+            if by_row is not None and by_row:
+                dd[field]=getattr(self, field)[index,:]
+            else:
+                dd[field]=getattr(self, field)[index,:].ravel()[index]
         return ATL06_data(from_dict=dd, list_of_fields=self.list_of_fields)
             
     def copy(self):
         return ATL06_data(list_of_data=(self), list_of_fields=self.list_of_fields)
     
-    def plot(self):
+    def plot(self, valid_pairs=None, valid_segs=None):
         import matplotlib.pyplot as plt
         colors=('r','b')
-        markers=['o','x']
-        flag_vals=(0, 1)
-        marker_sizes=(6, 6)
         for col in (0, 1):
-            for flag_val in flag_vals:
-                these=self.atl06_quality_summary[:,col]==flag_val            
-                #print 'found %d/%d points' %(np.sum(these), these.shape[0])
-                if np.any(these):
-                    plt.errorbar(self.x_RGT[these,col], self.h_LI[these,col], yerr=self.h_LI_sigma[these, col], c=colors[col], marker=markers[flag_val], linestyle='None', markersize=marker_sizes[flag_val]);
-        #temp=self.h_LI[1,self.ATL06_quality_summary[:,1]==1,1]
-        plt.ylim(np.amin(self.h_LI[self.atl06_quality_summary[:,1]==0,1])-5., np.amax(self.h_LI[self.atl06_quality_summary[:,1]==0 ,1])+5 ) 
+            plt.errorbar(self.x_atc[:,col], self.h_li[:,col], yerr=self.h_li_sigma[:, col], c=colors[col], marker='.', linestyle='None', markersize=4);
+        if valid_segs is not None:
+            for col in (0, 1):
+                plt.plot(self.x_atc[valid_segs[col], col], self.h_li[valid_segs[col], col],'marker','x',c=colors[col])
+
+        if valid_pairs is not None:
+            for col in (0, 1):
+                plt.plot(self.x_atc[valid_pairs, col], self.h_li[valid_pairs, col],'marker','o',c=colors[col])
+        plt.ylim(np.amin(self.h_li[self.atl06_quality_summary[:,1]==0,1])-5., np.amax(self.h_li[self.atl06_quality_summary[:,1]==0 ,1])+5 ) 
         #plt.show()
         return
     def get_pairs(self):
         pair_list=list()
-        unpaired_segments=list()
-        # loop over segment and orbit numbers         
-        for rep, seg in zip(set(self.orbit_number[:,0]), set(self.seg_count[:,0])):
-            these=np.where(np.logical_and(self.orbit_number==rep, self.seg_count=seg))
-            if len(these)>0:
-                pair_list.append(ATL06_pair(D6.index(these)))
-        return pair_list
+        for i in np.arange(self.h_li.shape[0]):
+            pair_list.append(ATL06_pair(D6=self.subset(i, by_row=True)))
+        all_pairs=ATL06_pair(pair_data=pair_list)
+        return all_pairs
 
-class ATL06_pair:
-    def __init__(self, D6):
-        #initializes based on input D6, assumed to contain one pair
-        self.x_atc=np.mean(D6.x_RGT)
-        self.y_atc=np.mean(D6.y_RGT)
-        self.dh_dx=D6.dh_dif_dx
-        self.dh_dx.shape=[1,2]
-        self.dh_dy=np.mean(D6.dh_fit_dy)
-        self.time=np.mean(D6.time)
-        self.seg_count=np.mean(D6.seg_count)
-        self.rep=np.mean(D6.orbit_number)
-        self.h=D6.h_LI
-        self.h.shape=[1,2]
-        ## repeat, 
-        # need to define a method to map the segment validity 
+ 

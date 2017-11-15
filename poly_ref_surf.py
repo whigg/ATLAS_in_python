@@ -37,7 +37,7 @@ class poly_ref_surf:
     def fit_matrix(self, x, y):
         G=np.zeros([x.size, self.exp_x.size])
         for col, ee in enumerate(zip(self.exp_x, self.exp_y)):
-            G[:,col]=(x.ravel()/self.xy_scale)**ee[0] * (y.ravel()/self.xy_scale)**ee[1]
+            G[:,col]=((x.ravel()-self.x0)/self.xy_scale)**ee[0] * ((y.ravel()-self.y0)/self.xy_scale)**ee[1]
         return G
     def z(self, x0, y0):
         # evaluate the poltnomial at [x0, y0]
