@@ -12,7 +12,7 @@ from ATL06_pair import ATL06_pair
 
 class ATL06_data:
     np.seterr(invalid='ignore')
-    def __init__(self, filename=None, pair=1, x_bounds=None, y_bounds=None, field_dict=None, list_of_fields=None, list_of_data=None, from_dict=None):
+    def __init__(self, filename=None, beam_pair=1, x_bounds=None, y_bounds=None, field_dict=None, list_of_fields=None, list_of_data=None, from_dict=None):
         if field_dict is None:
             # read everything
             field_dict={'land_ice_height':['delta_time','dh_fit_dx', 'dh_fit_dy','h_li','h_li_sigma', 'latitude','longitude',   'atl06_quality_summary', 'segment_id'], 
@@ -37,11 +37,11 @@ class ATL06_data:
         if filename is not None:
             # read a list of files if list provided
             if isinstance(filename, (list, tuple)):
-                D6_list=[ATL06_data(filename=thisfile, field_dict=field_dict, pair=pair, x_bounds=x_bounds, y_bounds=y_bounds) for thisfile in filename]
+                D6_list=[ATL06_data(filename=thisfile, field_dict=field_dict, beam_pair=beam_pair, x_bounds=x_bounds, y_bounds=y_bounds) for thisfile in filename]
                 self.build_from_list_of_data(D6_list)
             elif isinstance(filename, (basestring)):
                 # this happens when the input filename is a string, not a list
-                self.read_from_file(filename, field_dict, pair=pair, x_bounds=x_bounds, y_bounds=y_bounds)
+                self.read_from_file(filename, field_dict, beam_pair=beam_pair, x_bounds=x_bounds, y_bounds=y_bounds)
             else:
                 raise TypeError
         else:
@@ -49,8 +49,8 @@ class ATL06_data:
             for field in list_of_fields:
                 setattr(self, field, np.zeros((2,0)))       
           
-    def read_from_file(self, filename, field_dict,  x_bounds=None, y_bounds=None, pair=None):
-        beam_names=['gt%d%s' %(pair, b) for b in ['l','r']]
+    def read_from_file(self, filename, field_dict,  x_bounds=None, y_bounds=None, beam_pair=None):
+        beam_names=['gt%d%s' %(beam_pair, b) for b in ['l','r']]
         h5_f=h5py.File(filename,'r')
         if beam_names[0] not in h5_f.keys():
             return None
