@@ -10,7 +10,8 @@ class ATL06_pair:
     def __init__(self, D6=None, pair_data=None):
         if D6 is not None:
             #initializes based on input D6, assumed to contain one pair
-            self.x=np.mean(D6.x_atc)
+            # 2a. Set pair_data x and y
+            self.x=np.mean(D6.x_atc)  # mean of the pair, nan if not both defined
             self.y=np.mean(D6.y_atc)
             self.dh_dx=D6.dh_fit_dx
             self.dh_dx.shape=[1,2]
